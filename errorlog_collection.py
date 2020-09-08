@@ -12,6 +12,7 @@ import json
 import re
 import socket
 import paramiko
+from paramiko.ssh_exception import NoValidConnectionsError
 import encodings.idna
 
 
@@ -92,7 +93,6 @@ def main():
         f.write(json.dumps(result, indent=4, ensure_ascii=False))
     end = time.time()
     print('错误日志巡查完成，执行时间为 %s，输出日志 %s' % (round(end - start, 2), log_name))
-    # 00 22  *   *   *  /home/pto/errorsql/errorsql &
 
 
 def ssh_server(access, cmd):
@@ -102,11 +102,13 @@ def ssh_server(access, cmd):
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(hostname=access['ssh_ip'], port=access['ssh_port'], username=access['ssh_user'], password=access['ssh_password'])
         stdin, stdout, stderr = client.exec_command(cmd)
-        result = stdout.read()
+        if stdout.channel.recv_exit_status() == 0:
+            result = stdout.read()
+            return json.loads(result)
+    except NoValidConnectionsError as e:
+        print(e)
     finally:
-        # 关闭SSHClient
         client.close()
-    return json.loads(result)
 
 
 def paramiko_ssh(work_dir):
@@ -116,18 +118,19 @@ def paramiko_ssh(work_dir):
     cmd = 'cat %s' % os.path.join(work_dir, 'errorsql.log')
     for ip in ip_lists:
         access_dict['ssh_ip'] = ip
-        sql_dict = ssh_server(access_dict, cmd)
-        for key in sql_dict.keys():
-            i = result.setdefault(key, {})
-            if not i:
-                result[key] = {}
-            for k in sql_dict[key].keys():
-                j = result[key].setdefault(k, {})
-                if j:
-                    result[key][k]['count'] += sql_dict[key][k]['count']
-                else:
-                    result[key][k]['count'] = sql_dict[key][k]['count']
-                    result[key][k]['sql'] = sql_dict[key][k]['sql']
+        if ssh_server(access_dict, cmd):
+            sql_dict = ssh_server(access_dict, cmd)
+            for key in sql_dict.keys():
+                i = result.setdefault(key, {})
+                if not i:
+                    result[key] = {}
+                for k in sql_dict[key].keys():
+                    j = result[key].setdefault(k, {})
+                    if j:
+                        result[key][k]['count'] += sql_dict[key][k]['count']
+                    else:
+                        result[key][k]['count'] = sql_dict[key][k]['count']
+                        result[key][k]['sql'] = sql_dict[key][k]['sql']
     log_name = os.path.join(work_dir, 'errorsql_all.log')
     with open(log_name, 'w', encoding='utf-8') as f:
         f.write(json.dumps(result, indent=4, ensure_ascii=False))
@@ -136,9 +139,15 @@ def paramiko_ssh(work_dir):
 if __name__ == '__main__':
     work_dir = '/home/pto'
     os.chdir(work_dir)
-    if sys.argv[1] == 'self':
-        main()
-    elif sys.argv[1] == 'all':
-        paramiko_ssh(work_dir)
-    else:
-        print('本脚本用于收集udal服务器的错误sql, 参数self:在本机收集udal, 参数all:收集所有udal机器上的错误日志并汇总')
+    try:
+        if sys.argv[1] == 'self':
+            main()
+        elif sys.argv[1] == 'all':
+            paramiko_ssh(work_dir)
+        elif sys.argv[1] == 'version':
+            print('当前版本为v2.1 2020/09/07')
+    except IndexError as e:
+        print('本脚本用于收集udal服务器的错误sql, 参数self:在本机收集udal, 参数all:收集所有udal机器上的错误日志并汇总, 参数version:显示当前脚本版本号')
+        print('添加定时任务如下：')
+        print('agent服务器:   00 22  *   *   *  /home/pto/errorsql/errorsql self &')
+        print('server服务器:  30 23  *   *   *  /home/pto/errorsql/errorsql all &')
