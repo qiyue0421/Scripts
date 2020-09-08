@@ -145,7 +145,7 @@ if __name__ == '__main__':
         elif sys.argv[1] == 'all':
             paramiko_ssh(work_dir)
         elif sys.argv[1] == 'version':
-            print('当前版本为v2.1 2020/09/07')
+            print('当前版本为v2.1 2020/09/08')
     except IndexError as e:
         print('本脚本用于收集udal服务器的错误sql, 参数self:在本机收集udal, 参数all:收集所有udal机器上的错误日志并汇总, 参数version:显示当前脚本版本号')
         print('添加定时任务如下：')
