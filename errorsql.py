@@ -4,6 +4,16 @@
     1、本脚本用于收集udal服务器的错误sql
     2、以json格式输出
 """
+
+"""
+bug修复：
+1、2020/09/15 v2.3版本，修复错误语句切割bug
+2、2020/09/15 v2.4版本，修复sql语句中出现不属于增删查改等类型
+3、2020/09/15 v2.5版本，修复error_type参数的切割语法，保留 'syntax error'字样
+4、2020/10/10 v2.6版本，修复日志不存在报错的bug
+5、2020/10/12 v2.7版本，修复报错类型关键字parse err不存在时导致索引超出范围异常
+"""
+
 import datetime
 import time
 import os
@@ -18,24 +28,27 @@ import encodings.idna
 
 def dbproxy_errorlog(filename):
     date = datetime.datetime.now().strftime('%Y-%m-%d')
-    filter_list = ['errorCode=4000', 'errorCode=3013', 'Connection timed out', 'program err']
-    key_list = ['ERROR', 'syntax error']
+    filter_list = ['errorCode=4000', 'errorCode=3013', 'Connection timed out', 'program err', 'INFORMATION_SCHEMA']
+    key_list = ['ERROR', 'syntax error', 'parse err']
+    sql_list = ['select', 'update', 'insert', 'delete', 'SELECT', 'UPDATE', 'INSERT', 'DELETE']
     error_dict = {}
     with open(filename, encoding='utf-8') as file:
         for line in file.read().split(date):
-            if all(i in line for i in key_list) and not any(code in line for code in filter_list):
+            if not any(code in line for code in filter_list) and all(i in line for i in key_list):
                 # 切割出具体内容，去除换行符
                 content = line.split('at com', 1)[0].split(')', 1)[1].strip().replace('\n', '')
                 # 将多余的空格替换为一个空格
                 content = re.sub(" +", ' ', content)
-                error_type = content.split(':', 1)[1]
-                sql = content.split(':', 1)[0]
-                x = error_dict.setdefault(error_type, {})
-                if x:
-                    error_dict[error_type]['count'] += 1
-                else:
-                    error_dict[error_type]['count'] = 1
-                    error_dict[error_type]['sql'] = sql
+                # 分离出sql语句和错误类型
+                sql = content.split('parse err', 1)[0].strip()
+                error_type = content.split('parse err', 1)[1].split(':', 1)[1].strip()
+                if any(s in sql for s in sql_list):
+                    x = error_dict.setdefault(error_type, {})
+                    if x:
+                        error_dict[error_type]['count'] += 1
+                    else:
+                        error_dict[error_type]['count'] = 1
+                        error_dict[error_type]['sql'] = sql
     return error_dict
 
 
@@ -67,10 +80,10 @@ def udal(base_dir):
             # 通过端口号查看是否是实例
             if port in dbproxy_map.keys():
                 log_file = os.path.join(base_dir, dir_name, 'logs/dbproxy.log')
-                # 日志更新时间是否为当天
-                mtime = datetime.datetime.fromtimestamp(os.path.getmtime(log_file)).strftime('%Y-%m-%d')
-                if mtime == datetime.datetime.now().strftime('%Y-%m-%d'):
-                    udal_dict[dbproxy_map[port]] = dbproxy_errorlog(log_file)
+                if os.path.exists(log_file):
+                    mtime = datetime.datetime.fromtimestamp(os.path.getmtime(log_file)).strftime('%Y-%m-%d')
+                    if mtime == datetime.datetime.now().strftime('%Y-%m-%d'):
+                        udal_dict[dbproxy_map[port]] = dbproxy_errorlog(log_file)
     return udal_dict
 
 
@@ -112,8 +125,9 @@ def ssh_server(access, cmd):
 
 
 def paramiko_ssh(work_dir):
-    ip_lists = []
-    access_dict = {}
+    ip_lists = ['10.25.1.103', '10.25.1.104', '10.25.1.105', '10.25.1.106', '10.25.1.107', '10.25.1.108', '10.25.1.109', '10.25.1.110',
+                '10.25.1.111', '10.25.1.112', '10.25.1.113', '10.25.1.114', '10.26.1.103', '10.26.1.104', '10.26.1.105', '10.26.1.106']
+    access_dict = {'ssh_port': 2236, 'ssh_user': 'pto', 'ssh_password': 'pto-2020#'}
     result = {}
     cmd = 'cat %s' % os.path.join(work_dir, 'errorsql.log')
     for ip in ip_lists:
@@ -139,15 +153,16 @@ def paramiko_ssh(work_dir):
 if __name__ == '__main__':
     work_dir = '/home/pto'
     os.chdir(work_dir)
-    try:
-        if sys.argv[1] == 'self':
-            main()
-        elif sys.argv[1] == 'all':
-            paramiko_ssh(work_dir)
-        elif sys.argv[1] == 'version':
-            print('当前版本为v2.1 2020/09/08')
-    except IndexError as e:
-        print('本脚本用于收集udal服务器的错误sql, 参数self:在本机收集udal, 参数all:收集所有udal机器上的错误日志并汇总, 参数version:显示当前脚本版本号')
+    if len(sys.argv) != 2:
+        print('本脚本用于收集udal服务器的错误sql')
+        print('使用方法：errorlog [arg]')
+        print('参数说明：self——在本地机器收集错误sql  all——收集所有udal机器上的错误sql并汇总  version——显示当前脚本版本号\n')
         print('添加定时任务如下：')
         print('agent服务器:   00 22  *   *   *  /home/pto/errorsql/errorsql self &')
         print('server服务器:  30 23  *   *   *  /home/pto/errorsql/errorsql all &')
+    elif sys.argv[1] == 'self':
+        main()
+    elif sys.argv[1] == 'all':
+        paramiko_ssh(work_dir)
+    elif sys.argv[1] == 'version':
+        print('当前版本为v2.7 2020/10/12')
