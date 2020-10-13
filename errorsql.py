@@ -35,6 +35,7 @@ def dbproxy_errorlog(filename):
     with open(filename, encoding='utf-8') as file:
         for line in file.read().split(date):
             if not any(code in line for code in filter_list) and all(i in line for i in key_list):
+                print(line)
                 # 切割出具体内容，去除换行符
                 content = line.split('at com', 1)[0].split(')', 1)[1].strip().replace('\n', '')
                 # 将多余的空格替换为一个空格
