@@ -12,6 +12,7 @@ bug修复：
 3、2020/09/15 v2.5版本，修复error_type参数的切割语法，保留 'syntax error'字样
 4、2020/10/10 v2.6版本，修复日志不存在报错的bug
 5、2020/10/12 v2.7版本，修复报错类型关键字parse err不存在时导致索引超出范围异常
+6、2020/10/20 v3.0版本，重写过滤规则及信息采集模块，运用正则表达式进行匹配
 """
 
 import datetime
@@ -26,31 +27,56 @@ from paramiko.ssh_exception import NoValidConnectionsError
 import encodings.idna
 
 
+# 扩展一个JSONEncoder出来用来格式化set类型
+class CJsonEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, set):
+            return list(obj)
+        else:
+            return json.JSONEncoder.default(self, obj)
+
+
 def dbproxy_errorlog(filename):
     date = datetime.datetime.now().strftime('%Y-%m-%d')
-    filter_list = ['errorCode=4000', 'errorCode=3013', 'Connection timed out', 'program err', 'INFORMATION_SCHEMA']
-    key_list = ['ERROR', 'syntax error', 'parse err']
+    filter_list = ['Connection timed out', 'program err', 'INFORMATION_SCHEMA']
+    key_list = ['ERROR', 'syntax error', 'Connection=ServerConnection']
     sql_list = ['select', 'update', 'insert', 'delete', 'SELECT', 'UPDATE', 'INSERT', 'DELETE']
     error_dict = {}
     with open(filename, encoding='utf-8') as file:
         for line in file.read().split(date):
+            line = date + line
             if not any(code in line for code in filter_list) and all(i in line for i in key_list):
-                print(line)
-                # 切割出具体内容，去除换行符
-                content = line.split('at com', 1)[0].split(')', 1)[1].strip().replace('\n', '')
-                # 将多余的空格替换为一个空格
-                content = re.sub(" +", ' ', content)
-                # 分离出sql语句和错误类型
-                sql = content.split('parse err', 1)[0].strip()
-                error_type = content.split('parse err', 1)[1].split(':', 1)[1].strip()
+                sql_expr = re.compile(r'sql=(.*)\njava', re.S)
+                sql = re.findall(sql_expr, line)[0].replace('\n', '').replace('\t', '')
+                sql = re.sub(' +', ' ', sql)
+
                 if any(s in sql for s in sql_list):
-                    x = error_dict.setdefault(error_type, {})
+                    error_msg_expr = re.compile(r'syntax error, (.*)\n')
+                    error_msg = re.findall(error_msg_expr, line)[0]
+
+                    client_expr = re.compile(r"\[(.*?)\]")
+                    client_info = re.findall(client_expr, line)[1]
+                    client_info_list = client_info.split(',')
+                    client_addr = client_info_list[1].split('=')[1].split(':')[0]
+                    user = client_info_list[2].split('=')[1]
+                    schema = client_info_list[5].split('=')[1]
+
+                    time_expr = re.compile(r'^(.*?)\.')
+                    appear_time = re.findall(time_expr, line)[0]
+
+                    x = error_dict.setdefault(error_msg, {})
                     if x:
-                        error_dict[error_type]['count'] += 1
+                        error_dict[error_msg]['count'] += 1
                     else:
-                        error_dict[error_type]['count'] = 1
-                        error_dict[error_type]['sql'] = sql
+                        error_dict[error_msg]['count'] = 1
+                        error_dict[error_msg]['sql'] = sql
+                        error_dict[error_msg]['user'] = user
+                        error_dict[error_msg]['schema'] = schema
+                        error_dict[error_msg]['client_addr'] = set()
+                    error_dict[error_msg]['last_appear_time'] = appear_time
+                    error_dict[error_msg]['client_addr'].add(client_addr)
     return error_dict
+    # print(json.dumps(error_dict, indent=4, cls=CJsonEncoder))
 
 
 def udal(base_dir):
@@ -104,7 +130,7 @@ def main():
     result = udal('/app/udal')
     log_name = os.path.join(work_dir, 'errorsql.log')
     with open(log_name, 'w', encoding='utf-8') as f:
-        f.write(json.dumps(result, indent=4, ensure_ascii=False))
+        f.write(json.dumps(result, indent=4, ensure_ascii=False, cls=CJsonEncoder))
     end = time.time()
     print('错误日志巡查完成，执行时间为 %s，输出日志 %s' % (round(end - start, 2), log_name))
 
@@ -148,7 +174,7 @@ def paramiko_ssh(work_dir):
                         result[key][k]['sql'] = sql_dict[key][k]['sql']
     log_name = os.path.join(work_dir, 'errorsql_all.log')
     with open(log_name, 'w', encoding='utf-8') as f:
-        f.write(json.dumps(result, indent=4, ensure_ascii=False))
+        f.write(json.dumps(result, indent=4, ensure_ascii=False, cls=CJsonEncoder))
 
 
 if __name__ == '__main__':
@@ -166,4 +192,4 @@ if __name__ == '__main__':
     elif sys.argv[1] == 'all':
         paramiko_ssh(work_dir)
     elif sys.argv[1] == 'version':
-        print('当前版本为v2.7 2020/10/12')
+        print('当前版本为v3.0 2020/10/20')
