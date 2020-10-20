@@ -172,6 +172,10 @@ def paramiko_ssh(work_dir):
                     else:
                         result[key][k]['count'] = sql_dict[key][k]['count']
                         result[key][k]['sql'] = sql_dict[key][k]['sql']
+                        result[key][k]['client_addr'] = sql_dict[key][k]['client_addr']
+                        result[key][k]['user'] = sql_dict[key][k]['user']
+                        result[key][k]['schema'] = sql_dict[key][k]['schema']
+                        result[key][k]['last_appear_time'] = sql_dict[key][k]['last_appear_time']
     log_name = os.path.join(work_dir, 'errorsql_all.log')
     with open(log_name, 'w', encoding='utf-8') as f:
         f.write(json.dumps(result, indent=4, ensure_ascii=False, cls=CJsonEncoder))
