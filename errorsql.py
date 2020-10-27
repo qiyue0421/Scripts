@@ -13,6 +13,7 @@ bug修复：
 4、2020/10/10 v2.6版本，修复日志不存在报错的bug
 5、2020/10/12 v2.7版本，修复报错类型关键字parse err不存在时导致索引超出范围异常
 6、2020/10/20 v3.0版本，重写过滤规则及信息采集模块，运用正则表达式进行匹配
+7、2020/10/27 v3.1版本，服务器pto用户密码修改
 """
 
 import datetime
@@ -154,12 +155,14 @@ def ssh_server(access, cmd):
 def paramiko_ssh(work_dir):
     ip_lists = ['10.25.1.103', '10.25.1.104', '10.25.1.105', '10.25.1.106', '10.25.1.107', '10.25.1.108', '10.25.1.109', '10.25.1.110',
                 '10.25.1.111', '10.25.1.112', '10.25.1.113', '10.25.1.114', '10.26.1.103', '10.26.1.104', '10.26.1.105', '10.26.1.106']
-    access_dict = {'ssh_port': 2236, 'ssh_user': 'pto', 'ssh_password': 'pto-2020#'}
+    access_dict = {'ssh_port': 2236, 'ssh_user': 'pto', 'ssh_password': 'CO1-db-2020#!'}
     result = {}
     cmd = 'cat %s' % os.path.join(work_dir, 'errorsql.log')
     for ip in ip_lists:
         access_dict['ssh_ip'] = ip
         if ssh_server(access_dict, cmd):
+            if '10.26' in ip:
+                access_dict['ssh_password'] = 'CO3-db-2020#!'
             sql_dict = ssh_server(access_dict, cmd)
             for key in sql_dict.keys():
                 i = result.setdefault(key, {})
@@ -196,4 +199,4 @@ if __name__ == '__main__':
     elif sys.argv[1] == 'all':
         paramiko_ssh(work_dir)
     elif sys.argv[1] == 'version':
-        print('当前版本为v3.0 2020/10/20')
+        print('当前版本为v3.1 2020/10/27')
