@@ -160,9 +160,9 @@ def paramiko_ssh(work_dir):
     cmd = 'cat %s' % os.path.join(work_dir, 'errorsql.log')
     for ip in ip_lists:
         access_dict['ssh_ip'] = ip
+        if ip.startswith('10.26'):
+            access_dict['ssh_password'] = 'CO3-db-2020#!'
         if ssh_server(access_dict, cmd):
-            if '10.26' in ip:
-                access_dict['ssh_password'] = 'CO3-db-2020#!'
             sql_dict = ssh_server(access_dict, cmd)
             for key in sql_dict.keys():
                 i = result.setdefault(key, {})
