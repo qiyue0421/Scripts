@@ -1,3 +1,7 @@
+"""
+本脚本用于生成高强度8位密码
+"""
+
 import random
 import string
 
@@ -12,4 +16,5 @@ while True:
     if len(passwds) == int(count):
         break
 
-print(passwds)
+for i in passwds:
+    print(i)
